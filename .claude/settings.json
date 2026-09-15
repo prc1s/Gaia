@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Bash(cat .env*)",
+      "Bash(less .env*)",
+      "Bash(more .env*)",
+      "Bash(head .env*)",
+      "Bash(tail .env*)",
+      "Bash(grep * .env*)",
+      "Bash(source .env*)",
+      "Bash(env)",
+      "Bash(printenv*)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "denyRead": [
+        ".env",
+        ".env.local",
+        ".env.*"
+      ]
+    }
+  }
+}
