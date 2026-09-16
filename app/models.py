@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RunStatus(StrEnum):
@@ -56,6 +56,15 @@ class Step(BaseModel):
     error: str | None
     started_at: str | None
     completed_at: str | None
+
+
+class EquipmentProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    laptop_model: str
+    ram_gb: int = Field(gt=0, le=256)
+    estimated_cost_sar: int = Field(gt=0)
+    justification: str
 
 
 class TraceEvent(BaseModel):

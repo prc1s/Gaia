@@ -49,6 +49,12 @@ CREATE TABLE IF NOT EXISTS effects (
     created_at      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS role_groups (
+    role       TEXT PRIMARY KEY,
+    groups     TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS trace (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id   TEXT NOT NULL,

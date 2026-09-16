@@ -4,7 +4,7 @@ EMPLOYEES = {
     "emp-1001": {
         "first_name": "Sara",
         "last_name": "Almutairi",
-        "personal_email": "sara.almutairi@gaia.sa",
+        "personal_email": "sara.almutairi@gmail.com",
         "role": "Backend Engineer",
         "department": "Engineering",
         "manager_id": "emp-2001",
@@ -14,7 +14,7 @@ EMPLOYEES = {
     "emp-1002": {
         "first_name": "Omar",
         "last_name": "Al-Faraj",
-        "personal_email": "omar.faraj@gaia.sa",
+        "personal_email": "omar.faraj@gmail.com",
         "role": "Data Scientist",
         "department": "Engineering",
         "manager_id": "emp-2001",
@@ -24,7 +24,7 @@ EMPLOYEES = {
     "emp-1003": {
         "first_name": "Néstor",
         "last_name": "González",
-        "personal_email": "nestor.gonzalez@gaia.sa",
+        "personal_email": "nestor.gonzalez@gmail.com",
         "role": "Ceramics Technician",
         "department": "Operations",
         "manager_id": "emp-2002",

@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     address_collision_cap: int = 50
 
     anthropic_api_key: SecretStr | None = None  # no key -> FakeLLM
-    llm_model: str = "claude-sonnet-5"
+    llm_model: str = "claude-opus-5"
 
 
 @lru_cache

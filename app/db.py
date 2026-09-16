@@ -121,6 +121,32 @@ class Database:
             res.append(_loads(row["payload"]))
         return res
 
+    # Learned role mappings: titles whose groups a human approved on an earlier run.
+
+    async def save_role_groups(self, role: str, groups: list[str]) -> None:
+        await self.conn.execute(
+            "INSERT INTO role_groups (role, groups, created_at) VALUES (?, ?, ?)"
+            " ON CONFLICT DO NOTHING",
+            (role, json.dumps(groups), now()),
+        )
+        await self.conn.commit()
+
+    async def load_role_groups(self, role: str) -> list[str] | None:
+        async with self.conn.execute(
+            "SELECT groups FROM role_groups WHERE role = ?", (role,)
+        ) as cur:
+            row = await cur.fetchone()
+        return json.loads(row["groups"]) if row else None
+
+    async def load_all_role_groups(self) -> dict[str, list[str]]:
+        async with self.conn.execute("SELECT role, groups FROM role_groups ORDER BY role") as cur:
+            rows = await cur.fetchall()
+
+        res = {}
+        for row in rows:
+            res[row["role"]] = json.loads(row["groups"])
+        return res
+
     # Trace. Callers go through app.trace.append, which redacts first.
 
     async def insert_trace(
