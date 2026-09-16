@@ -1,6 +1,7 @@
 import asyncio
 
 from app import trace
+from app.models import RunStatus
 from app.orchestrator import execute_run
 
 
@@ -31,6 +32,37 @@ class Worker:
 
     async def submit(self, run_id: str) -> None:
         await self.queue.put(run_id)
+
+    async def sweep(self) -> None:
+        """Rebuild the queue from the database. Paused runs are left alone."""
+        await self._reconcile_invocations()
+
+        for run_id in await self.db.reclaim_running_runs():
+            await trace.append(self.db, run_id, None, "run_reclaimed")
+
+        for run_id in await self.db.load_run_ids_by_status(RunStatus.PENDING):
+            await self.submit(run_id)
+
+    async def _reconcile_invocations(self) -> None:
+        """An effect row is the proof. Its absence is proof the tool never landed."""
+        for invocation in await self.db.load_in_flight_invocations():
+            key = invocation["idempotency_key"]
+            effect = await self.db.load_effect(key)
+
+            if effect is not None:
+                await self.db.finish_invocation(key, effect)
+                outcome = "effect_landed"
+            else:
+                await self.db.fail_invocation(key)
+                outcome = "effect_absent"
+
+            await trace.append(
+                self.db,
+                invocation["run_id"],
+                invocation["step_idx"],
+                "invocation_reconciled",
+                {"tool": invocation["tool"], "outcome": outcome},
+            )
 
     async def _consume(self) -> None:
         while True:

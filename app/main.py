@@ -28,6 +28,7 @@ def create_app(
     async def lifespan(app: FastAPI):
         db = await Database.connect(settings.db_path)
         worker = Worker(db, ToolBox(db, faults), llm or build_llm(settings), settings)
+        await worker.sweep()
         await worker.start()
 
         app.state.db = db

@@ -340,6 +340,50 @@ class Database:
         )
         await self.conn.commit()
 
+    # Recovery: what the startup sweep reads.
+
+    async def load_in_flight_invocations(self) -> list[dict]:
+        async with self.conn.execute(
+            "SELECT * FROM tool_invocations WHERE status = ? ORDER BY created_at",
+            (InvocationStatus.IN_FLIGHT.value,),
+        ) as cur:
+            rows = await cur.fetchall()
+
+        res = []
+        for row in rows:
+            res.append(dict(row))
+        return res
+
+    async def reclaim_running_runs(self) -> list[str]:
+        """One worker, so a run still `running` at startup was abandoned by a dead process."""
+        async with self.conn.execute(
+            "SELECT id FROM runs WHERE status = ?", (RunStatus.RUNNING.value,)
+        ) as cur:
+            rows = await cur.fetchall()
+
+        ids = []
+        for row in rows:
+            ids.append(row["id"])
+
+        if ids:
+            await self.conn.execute(
+                "UPDATE runs SET status = ?, updated_at = ? WHERE status = ?",
+                (RunStatus.PENDING.value, now(), RunStatus.RUNNING.value),
+            )
+            await self.conn.commit()
+        return ids
+
+    async def load_run_ids_by_status(self, status: RunStatus) -> list[str]:
+        async with self.conn.execute(
+            "SELECT id FROM runs WHERE status = ? ORDER BY created_at", (status.value,)
+        ) as cur:
+            rows = await cur.fetchall()
+
+        ids = []
+        for row in rows:
+            ids.append(row["id"])
+        return ids
+
     # Learned role mappings: titles whose groups a human approved on an earlier run.
 
     async def save_role_groups(self, role: str, groups: list[str]) -> None:
