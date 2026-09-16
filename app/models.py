@@ -36,8 +36,6 @@ class Run(BaseModel):
     current_step: int
     pause_reason: str | None
     approval_decision: str | None
-    owner_token: str | None
-    lease_expires_at: str | None
     max_steps: int
     tool_call_count: int
     max_tool_calls: int

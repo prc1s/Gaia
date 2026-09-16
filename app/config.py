@@ -10,8 +10,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="GAIA_", env_file=".env", extra="ignore")
 
     db_path: str = "gaia.db"
-    worker_count: int = 3
-    lease_seconds: int = 30
 
     approval_threshold_sar: int = 5000
 
