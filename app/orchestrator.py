@@ -1,4 +1,7 @@
+import asyncio
+
 from app import trace
+from app.errors import RetriesExhausted
 from app.models import InvocationStatus
 from app.redaction import redact
 from app.steps import STEPS
@@ -82,6 +85,38 @@ class RunContext:
         return result
 
 
+async def run_step(db, tools, llm, settings, run, outputs, step):
+    """Retry ladder. The counter is in memory: a restart starts it again."""
+    attempt = 0
+
+    while True:
+        attempt += 1
+        ctx = RunContext(run, db, tools, llm, settings, outputs, step)
+
+        await db.start_step(run.id, step.idx)
+        await trace.append(
+            db, run.id, step.idx, "step_started", {"name": step.name, "attempt": attempt}
+        )
+
+        try:
+            return await step.fn(ctx)
+        except Exception as exc:
+            if not getattr(exc, "retryable", False):
+                raise
+            if attempt >= settings.max_step_attempts:
+                raise RetriesExhausted(type(exc).__name__, attempt) from exc
+
+            await trace.append(
+                db,
+                run.id,
+                step.idx,
+                "retry_scheduled",
+                {"attempt": attempt, "error": type(exc).__name__},
+            )
+            if settings.retry_delay_s:
+                await asyncio.sleep(settings.retry_delay_s)
+
+
 async def execute_run(db, tools, llm, settings, run_id: str) -> None:
     """Walk steps until the run pauses, fails, or completes."""
     run = await db.load_run(run_id)
@@ -90,15 +125,14 @@ async def execute_run(db, tools, llm, settings, run_id: str) -> None:
 
     while run.current_step <= len(STEPS):
         step = STEPS[run.current_step - 1]
-        ctx = RunContext(run, db, tools, llm, settings, outputs, step)
-
-        await db.start_step(run_id, step.idx)
-        await trace.append(db, run_id, step.idx, "step_started", {"name": step.name})
 
         try:
-            result = await step.fn(ctx)
+            result = await run_step(db, tools, llm, settings, run, outputs, step)
         except Exception as exc:
-            error = f"{type(exc).__name__}: step {step.idx} {step.name}"
+            if isinstance(exc, RetriesExhausted):
+                error = str(exc)
+            else:
+                error = f"{type(exc).__name__}: step {step.idx} {step.name}"
             await db.fail_step(run_id, step.idx, error)
             await trace.append(db, run_id, step.idx, "step_failed", {"error": type(exc).__name__})
             await db.fail_run(run_id, error)
