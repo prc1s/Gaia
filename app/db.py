@@ -86,6 +86,41 @@ class Database:
             res.append(Step(**step_dict))
         return res
 
+    # Effects: the fake outside world. Duplicate keys never create a second row.
+
+    async def record_effect(self, idempotency_key: str, kind: str, payload: dict) -> tuple[dict, bool]:
+        """Returns the stored effect and whether this call created it."""
+        cur = await self.conn.execute(
+            "INSERT INTO effects (idempotency_key, kind, payload, created_at)"
+            " VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
+            (idempotency_key, kind, json.dumps(payload), now()),
+        )
+        created = cur.rowcount == 1
+        await self.conn.commit()
+
+        stored = await self.load_effect(idempotency_key)
+        assert stored is not None
+        return stored, created
+
+    async def load_effect(self, idempotency_key: str) -> dict | None:
+        async with self.conn.execute(
+            "SELECT payload FROM effects WHERE idempotency_key = ?", (idempotency_key,)
+        ) as cur:
+            row = await cur.fetchone()
+        return _loads(row["payload"]) if row else None
+
+    async def load_effects_of_kind(self, kind: str) -> list[dict]:
+        async with self.conn.execute(
+            "SELECT payload FROM effects WHERE kind = ? ORDER BY created_at, idempotency_key",
+            (kind,),
+        ) as cur:
+            rows = await cur.fetchall()
+
+        res = []
+        for row in rows:
+            res.append(_loads(row["payload"]))
+        return res
+
     # Trace. Callers go through app.trace.append, which redacts first.
 
     async def insert_trace(
