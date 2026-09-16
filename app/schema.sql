@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS runs (
     current_step      INTEGER NOT NULL DEFAULT 1,
     pause_reason      TEXT,
     approval_decision TEXT CHECK (approval_decision IN ('approved','rejected')),
-    max_steps         INTEGER NOT NULL DEFAULT 20,
     tool_call_count   INTEGER NOT NULL DEFAULT 0,
     max_tool_calls    INTEGER NOT NULL DEFAULT 40,
     error             TEXT,

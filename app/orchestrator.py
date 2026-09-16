@@ -19,6 +19,19 @@ class RunContext:
     def step_output(self, idx: int) -> dict:
         return self.outputs.get(idx, {})
 
+    async def save_output(self, output: dict) -> None:
+        """Persist a decision before pausing, so resuming does not recompute it."""
+        await self.db.save_step_output(self.run.id, self.step.idx, output)
+        self.outputs[self.step.idx] = output
+
+    async def consume_approval(self) -> str | None:
+        """Read and clear: one decision approves one gate."""
+        decision = self.run.approval_decision
+        if decision is not None:
+            await self.db.clear_approval(self.run.id)
+            self.run.approval_decision = None
+        return decision
+
     async def emit(self, event: str, detail: dict | None = None) -> None:
         await trace.append(self.db, self.run.id, self.step.idx, event, detail)
 
@@ -93,6 +106,7 @@ async def execute_run(db, tools, llm, settings, run_id: str) -> None:
             return
 
         if result.pause:
+            await db.reset_step(run_id, step.idx)
             await db.pause_run(run_id, result.pause)
             await trace.append(db, run_id, step.idx, "run_paused", {"reason": result.pause})
             return

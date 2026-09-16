@@ -14,6 +14,9 @@ class RunStatus(StrEnum):
 
 TERMINAL_RUN_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED})
 
+APPROVAL_PAUSE_REASONS = ("awaiting_approval", "awaiting_group_approval")
+EXTERNAL_PAUSE_REASONS = ("awaiting_directory_sync",)
+
 
 class StepStatus(StrEnum):
     PENDING = "pending"
@@ -36,7 +39,6 @@ class Run(BaseModel):
     current_step: int
     pause_reason: str | None
     approval_decision: str | None
-    max_steps: int
     tool_call_count: int
     max_tool_calls: int
     error: str | None

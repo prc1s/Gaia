@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     max_step_attempts: int = 3
     retry_delay_s: float = 1.0  # fixed wait between retries; 0 in tests
 
-    max_steps: int = 20
     max_tool_calls: int = 40
 
     email_domain: str = "gaia.sa"

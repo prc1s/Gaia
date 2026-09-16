@@ -2,7 +2,7 @@ import re
 import unicodedata
 import uuid
 
-from app.errors import AddressTakenError, PermanentToolError, TransientToolError
+from app.errors import AccountNotVisibleError, AddressTakenError, PermanentToolError
 
 MAX_SUFFIX_DEFAULT = 50
 
@@ -71,7 +71,7 @@ async def create_setup_link(db, account_id: str) -> dict:
 
 
 async def add_to_groups(db, account_id: str, groups: list[str], idempotency_key: str) -> dict:
-    """Raises TransientToolError while the account is still propagating."""
+    """Raises AccountNotVisibleError while the account is still propagating."""
     accounts = await db.load_effects_of_kind("account")
 
     known = set()
@@ -79,7 +79,7 @@ async def add_to_groups(db, account_id: str, groups: list[str], idempotency_key:
         known.add(account["account_id"])
 
     if account_id not in known:
-        raise TransientToolError(f"account not visible yet: {account_id}")
+        raise AccountNotVisibleError(f"account not visible yet: {account_id}")
 
     payload = {"account_id": account_id, "groups": sorted(groups)}
     effect, _ = await db.record_effect(idempotency_key, "groups", payload)

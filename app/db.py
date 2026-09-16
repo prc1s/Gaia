@@ -5,7 +5,16 @@ from pathlib import Path
 
 import aiosqlite
 
-from app.models import InvocationStatus, Run, RunStatus, Step, StepStatus, TraceEvent
+from app.models import (
+    APPROVAL_PAUSE_REASONS,
+    EXTERNAL_PAUSE_REASONS,
+    Run,
+    RunStatus,
+    Step,
+    StepStatus,
+    TraceEvent,
+    InvocationStatus,
+)
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -38,20 +47,16 @@ class Database:
     # Runs and steps
 
     async def create_run(
-        self,
-        employee_id: str,
-        step_names: list[str],
-        max_steps: int = 20,
-        max_tool_calls: int = 40,
+        self, employee_id: str, step_names: list[str], max_tool_calls: int = 40
     ) -> Run:
         """Insert the run and all its step rows in one transaction."""
         run_id = str(uuid.uuid4())
         ts = now()
         try:
             await self.conn.execute(
-                "INSERT INTO runs (id, employee_id, status, max_steps, max_tool_calls,"
-                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (run_id, employee_id, RunStatus.PENDING.value, max_steps, max_tool_calls, ts, ts),
+                "INSERT INTO runs (id, employee_id, status, max_tool_calls,"
+                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, employee_id, RunStatus.PENDING.value, max_tool_calls, ts, ts),
             )
             await self.conn.executemany(
                 "INSERT INTO steps (run_id, idx, name, status) VALUES (?, ?, ?, ?)",
@@ -150,6 +155,57 @@ class Database:
         )
         await self.conn.commit()
 
+    # Operator decisions. Each is a conditional update: rowcount 0 means it was a no-op.
+
+    async def approve_run(self, run_id: str) -> bool:
+        reasons = ", ".join("?" for _ in APPROVAL_PAUSE_REASONS)
+        cur = await self.conn.execute(
+            "UPDATE runs SET status = 'pending', pause_reason = NULL,"
+            " approval_decision = 'approved', updated_at = ?"
+            f" WHERE id = ? AND status = 'paused' AND pause_reason IN ({reasons})",
+            (now(), run_id, *APPROVAL_PAUSE_REASONS),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
+    async def reject_run(self, run_id: str, error: str) -> bool:
+        reasons = ", ".join("?" for _ in APPROVAL_PAUSE_REASONS)
+        cur = await self.conn.execute(
+            "UPDATE runs SET status = 'failed', pause_reason = NULL,"
+            " approval_decision = 'rejected', error = ?, updated_at = ?"
+            f" WHERE id = ? AND status = 'paused' AND pause_reason IN ({reasons})",
+            (error, now(), run_id, *APPROVAL_PAUSE_REASONS),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
+    async def resume_run(self, run_id: str) -> bool:
+        reasons = ", ".join("?" for _ in EXTERNAL_PAUSE_REASONS)
+        cur = await self.conn.execute(
+            "UPDATE runs SET status = 'pending', pause_reason = NULL, updated_at = ?"
+            f" WHERE id = ? AND status = 'paused' AND pause_reason IN ({reasons})",
+            (now(), run_id, *EXTERNAL_PAUSE_REASONS),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
+    async def cancel_run(self, run_id: str) -> bool:
+        cur = await self.conn.execute(
+            "UPDATE runs SET status = 'cancelled', pause_reason = NULL, updated_at = ?"
+            " WHERE id = ? AND status IN ('pending', 'running', 'paused')",
+            (now(), run_id),
+        )
+        await self.conn.commit()
+        return cur.rowcount == 1
+
+    async def clear_approval(self, run_id: str) -> None:
+        """A gate consumes its decision, so the next gate cannot inherit it."""
+        await self.conn.execute(
+            "UPDATE runs SET approval_decision = NULL, updated_at = ? WHERE id = ?",
+            (now(), run_id),
+        )
+        await self.conn.commit()
+
     async def active_run_for_employee(self, employee_id: str) -> Run | None:
         async with self.conn.execute(
             "SELECT * FROM runs WHERE employee_id = ? AND status IN ('pending','running','paused')"
@@ -204,6 +260,21 @@ class Database:
         except Exception:
             await self.conn.rollback()
             raise
+
+    async def save_step_output(self, run_id: str, idx: int, output: dict) -> None:
+        """Used when a step pauses: what it decided survives the wait."""
+        await self.conn.execute(
+            "UPDATE steps SET output = ? WHERE run_id = ? AND idx = ?",
+            (json.dumps(output), run_id, idx),
+        )
+        await self.conn.commit()
+
+    async def reset_step(self, run_id: str, idx: int) -> None:
+        await self.conn.execute(
+            "UPDATE steps SET status = ? WHERE run_id = ? AND idx = ?",
+            (StepStatus.PENDING.value, run_id, idx),
+        )
+        await self.conn.commit()
 
     async def fail_step(self, run_id: str, idx: int, error: str) -> None:
         await self.conn.execute(

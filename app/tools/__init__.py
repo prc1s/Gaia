@@ -14,14 +14,20 @@ TOOLS = {
 class FaultInjector:
     """Makes named tools fail a set number of times, then stop failing."""
 
-    def __init__(self, fail_n_times: dict[str, int] | None = None) -> None:
+    def __init__(
+        self,
+        fail_n_times: dict[str, int] | None = None,
+        errors: dict[str, type[Exception]] | None = None,
+    ) -> None:
         self.remaining = dict(fail_n_times or {})
+        self.errors = dict(errors or {})
 
     def check(self, tool: str) -> None:
         left = self.remaining.get(tool, 0)
         if left > 0:
             self.remaining[tool] = left - 1
-            raise TransientToolError(f"injected failure: {tool}")
+            error = self.errors.get(tool, TransientToolError)
+            raise error(f"injected failure: {tool}")
 
 
 class ToolBox:

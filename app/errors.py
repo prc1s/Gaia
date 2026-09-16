@@ -10,6 +10,10 @@ class AddressTakenError(TransientToolError):
     """Concurrent address allocation; retry must re-scan."""
 
 
+class AccountNotVisibleError(TransientToolError):
+    """Directory propagation delay. Step 4 parks the run instead of retrying."""
+
+
 class PermanentToolError(ToolError):
     retryable = False
 

@@ -1,8 +1,8 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from app.errors import AddressTakenError
-from app.groups import resolve_from_mapping
+from app.errors import AccountNotVisibleError, AddressTakenError
+from app.groups import learn_role, resolve_from_mapping
 from app.llm import propose_equipment, resolve_groups
 from app.redaction import mask_email
 from app.tools.directory import find_free_address, normalise_base
@@ -77,14 +77,31 @@ async def resolve_groups_step(ctx) -> StepResult:
 
     groups = await resolve_from_mapping(ctx.db, employee["role"])
     source = "mapping"
-    if groups is None:
-        # Phase 5 pauses here for approval before applying an LLM proposal.
-        groups = await resolve_groups(ctx.llm, employee["role"], employee["department"])
-        source = "llm"
 
-    await ctx.call_effect(
-        "directory.add_to_groups", account_id=account["account_id"], groups=groups
-    )
+    if groups is None:
+        proposed = ctx.step_output(4).get("proposed_groups")
+
+        if proposed is None:
+            # The model drafts; it never grants. Park until a human ratifies.
+            proposed = await resolve_groups(ctx.llm, employee["role"], employee["department"])
+            await ctx.save_output({"proposed_groups": proposed, "role": employee["role"]})
+            return StepResult(pause="awaiting_group_approval")
+
+        if await ctx.consume_approval() != "approved":
+            return StepResult(pause="awaiting_group_approval")
+
+        groups = proposed
+        source = "approved"
+        await learn_role(ctx.db, employee["role"], groups)
+
+    try:
+        await ctx.call_effect(
+            "directory.add_to_groups", account_id=account["account_id"], groups=groups
+        )
+    except AccountNotVisibleError:
+        # Propagation delay, not a failure. The run parks and waits.
+        return StepResult(pause="awaiting_directory_sync")
+
     return StepResult(output={"groups": groups, "source": source})
 
 
@@ -95,8 +112,15 @@ async def propose_equipment_step(ctx) -> StepResult:
 
 
 async def equipment_gate(ctx) -> StepResult:
-    # Phase 5 adds the threshold pause. For now the gate records that it ran.
-    return StepResult(skipped=True)
+    cost = ctx.step_output(5)["estimated_cost_sar"]
+
+    if cost <= ctx.settings.approval_threshold_sar:
+        return StepResult(skipped=True)
+
+    if await ctx.consume_approval() == "approved":
+        return StepResult(output={"approved": True, "cost_sar": cost})
+
+    return StepResult(pause="awaiting_approval")
 
 
 async def order_laptop(ctx) -> StepResult:
